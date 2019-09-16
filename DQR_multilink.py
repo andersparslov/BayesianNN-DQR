@@ -39,7 +39,7 @@ data['link_order'] = data['link_order'].cat.codes
 data['Weekday'] = data.index.weekday_name
 data = data.sort_values('link_order')
 
-lags = np.arange(6, 60, 8)
+lags = np.arange(6, 40, 6)
 kernel_lengths = np.arange(2, len(data['link_ref'].unique()), 2)
 rmse = np.zeros(( num_partitions, len(lags), len(kernel_lengths) ))
 icp  = np.zeros(( num_partitions, len(lags), len(kernel_lengths) ))
@@ -125,8 +125,102 @@ for partition in range(num_partitions):
             rmse[partition, k, l] = np.sqrt(np.mean((Y_pred_mean_total - Y_true_total)**2))
             icp[partition, k, l] = np.sum(np.logical_and( (Y_true_total > Y_pred_lwr_total),(Y_true_total < Y_pred_upr_total) )) / len(Y_true_total)
             
+            
+##############################################
 rmse_mean = np.mean(rmse, axis = 0)
 icp_mean = np.mean(icp, axis = 0)
 
+## Fit best RMSE model again 
+inds_rmse_max = np.argwhere(rmse_mean == np.amax(rmse_mean))[0]
+lag = lags[inds_rmse_max[0]]
+kernel = kernel_lengths[1]
+
+inds_icp_max = np.argwhere(icp_mean == np.amax(icp_mean))[0]
+lag = lags[inds_icp_max[0]]
+kernel = kernel_lengths[1]
+##############################################
+
 np.savetxt("data/rmse.csv", rmse_mean)
 np.savetxt("data/icp.csv", icp_mean)
+
+
+X_train, y_train, y_ix_train, y_mean_train, y_std_train, y_num_meas_train = roll(ix_train, 
+                                                                                 ts_train, 
+                                                                                 rm_mean_train, 
+                                                                                 rm_scale_train, 
+                                                                                 w_train, 
+                                                                                 lag, 
+                                                                                 preds)
+X_test, y_test, y_ix_test, y_mean_test, y_std_test, y_num_meas_test = roll(ix_test, 
+                                                                           ts_test, 
+                                                                           rm_mean_test, 
+                                                                           rm_scale_test, 
+                                                                           w_test, 
+                                                                           lag, 
+                                                                           preds)
+
+X_train = X_train[:,:,:,np.newaxis,np.newaxis]
+y_train = y_train[:,:,:,np.newaxis,np.newaxis]
+X_test = X_test[:,:,:,np.newaxis,np.newaxis]
+y_test = y_test[:,:,:,np.newaxis,np.newaxis]
+
+quantiles = np.array([0.05, 0.95])
+y_traink = np.zeros((y_train.shape[0], y_train.shape[1], y_train.shape[2], 1, len(quantiles)+1))
+y_testk  = np.zeros((y_test.shape[0], y_train.shape[1], y_train.shape[2], 1, len(quantiles)+1))
+for k in range(len(quantiles)):
+    y_traink[:,:,:,:,k] = y_train[:,:,:,:,0]
+    y_testk[:,:,:,:,k] = y_test[:,:,:,:,0]
+
+mod = models.joint_multilink(num_filters = 64, 
+                             kernel_length = kernel,
+                             input_timesteps = X_train.shape[1],  
+                             num_links       = X_train.shape[2], 
+                             output_timesteps = y_train.shape[1], 
+                             quantiles = quantiles, 
+                             loss = lambda y, f: models.multi_tilted_loss2(quantiles, y, f))
+mod.fit(X_train, y_traink, validation_data = (X_test, y_testk), verbose = 0)
+## Save model
+mod.save('data/mod_rmse.h5')
+
+
+
+## Fit best ICP model again 
+
+
+X_train, y_train, y_ix_train, y_mean_train, y_std_train, y_num_meas_train = roll(ix_train, 
+                                                                                 ts_train, 
+                                                                                 rm_mean_train, 
+                                                                                 rm_scale_train, 
+                                                                                 w_train, 
+                                                                                 lag, 
+                                                                                 preds)
+X_test, y_test, y_ix_test, y_mean_test, y_std_test, y_num_meas_test = roll(ix_test, 
+                                                                           ts_test, 
+                                                                           rm_mean_test, 
+                                                                           rm_scale_test, 
+                                                                           w_test, 
+                                                                           lag, 
+                                                                           preds)
+
+X_train = X_train[:,:,:,np.newaxis,np.newaxis]
+y_train = y_train[:,:,:,np.newaxis,np.newaxis]
+X_test = X_test[:,:,:,np.newaxis,np.newaxis]
+y_test = y_test[:,:,:,np.newaxis,np.newaxis]
+
+quantiles = np.array([0.05, 0.95])
+y_traink = np.zeros((y_train.shape[0], y_train.shape[1], y_train.shape[2], 1, len(quantiles)+1))
+y_testk  = np.zeros((y_test.shape[0], y_train.shape[1], y_train.shape[2], 1, len(quantiles)+1))
+for k in range(len(quantiles)):
+    y_traink[:,:,:,:,k] = y_train[:,:,:,:,0]
+    y_testk[:,:,:,:,k] = y_test[:,:,:,:,0]
+
+mod = models.joint_multilink(num_filters = 64, 
+                             kernel_length = kernel,
+                             input_timesteps = X_train.shape[1],  
+                             num_links       = X_train.shape[2], 
+                             output_timesteps = y_train.shape[1], 
+                             quantiles = quantiles, 
+                             loss = lambda y, f: models.multi_tilted_loss2(quantiles, y, f))
+mod.fit(X_train, y_traink, validation_data = (X_test, y_testk), verbose = 0)
+## Save model
+mod.save('data/mod_icp.h5')
