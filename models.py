@@ -1,5 +1,6 @@
 import tensorflow as tf
-import keras.backend as K
+#import keras.backend as K
+import tensorflow.keras.backend as K
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LSTM, RepeatVector, TimeDistributed, ConvLSTM2D, Activation, BatchNormalization, Flatten, Reshape
 
@@ -25,14 +26,6 @@ def twoLayerLTSM(input_dim, output_dim, loss = 'mse'):
     mod.compile(optimizer='adam', loss = loss)
     return mod
 
-def multi_tilted_loss2(quantiles, y, f):
-    loss = K.mean(K.square(y[:,:,:,0,0]-f[:,:,:,0,0]), axis=-1)
-    for k in range(len(quantiles)):
-        q = quantiles[k]
-        e = (y[:,:,:,0,k+1]-f[:,:,:,0,k+1])
-        loss += K.mean(K.maximum(q*e, (q-1)*e))
-    return loss
-
 def build_model(num_nodes, input_dim, output_dim, loss):
     mod = Sequential()
     mod.add(LSTM(100, activation='relu', input_shape=(input_dim, 1)))
@@ -43,6 +36,14 @@ def build_model(num_nodes, input_dim, output_dim, loss):
     mod.add(TimeDistributed(Dense(output_dim)))
     mod.compile(loss=loss, optimizer = 'nadam')
     return mod
+
+def multi_tilted_loss(quantiles, y, f):
+    loss = K.mean(K.square(y[:,:,:,0,0]-f[:,:,:,0,0]), axis=-1)
+    for k in range(len(quantiles)):
+        q = quantiles[k]
+        e = (y[:,:,:,0,k+1]-f[:,:,:,0,k+1])
+        loss += K.mean(K.maximum(q*e, (q-1)*e))
+    return loss
 
 def joint_multilink(num_filters, kernel_length, input_timesteps, num_links, output_timesteps, quantiles, loss):
     model = Sequential()
