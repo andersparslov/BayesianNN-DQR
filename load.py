@@ -228,6 +228,11 @@ def traveltimes_all(data_train, data_test):
     data_test  = pd.pivot_table(data_test, index = 'time', columns='link_ref', values='link_travel_time')
     
     return data_train.sort_index(), data_test.sort_index()
+    
+def skip_row(index, keep_list):
+	if (index == 0):
+		return False ## Never want to skip the header
+	return index not in keep_list
 
 def write_3d(X, filename):
     X_list = X.tolist()
