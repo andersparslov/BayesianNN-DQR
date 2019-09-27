@@ -14,27 +14,28 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LSTM, RepeatVector, TimeDistributed, ConvLSTM2D, Activation, BatchNormalization, Flatten, Reshape
 
 start = datetime.strptime('19/01/01', "%y/%m/%d")
-end   = datetime.strptime('19/04/29', "%y/%m/%d")
+end   = datetime.strptime('19/04/14', "%y/%m/%d")
 period = (end - start).days
 period_train_days = 7*9  ## Train on 9 weeks
 period_test_days =  7*1  ## Test on  1 week
 advance_days = 7         ## Advance by 1 week
 num_partitions = int( (period - period_train_days - period_test_days ) /advance_days)
 
-num_links = 8 ## REMEMBER TO CHANGE THIS WHEN LINKS CHANGE
+num_links = 16 
 
-filters = np.array([2**exp for exp in range(3, 7)]) ## [8, 16, 32, 64]
-lags = np.arange(8, 32+1, 6) ## [8, 14, 20, 26, 32]
-kernel_lengths = np.arange(3, num_links, 2) ## [3, 5, 7]
-rmse = np.zeros(( num_partitions, len(lags), len(kernel_lengths), len(filters) ))
-icp  = np.zeros(( num_partitions, len(lags), len(kernel_lengths), len(filters) ))
-mil  = np.zeros(( num_partitions, len(lags), len(kernel_lengths), len(filters) ))
+##filters = np.array([2**exp for exp in range(4, 7)]) ## [16, 32, 64]
+alphas = np.arange(3, 10)
+kernel_lengths = np.arange(3, num_links, 2) ## [3, 5, 7, 9, 11, 13, 15]
+rmse = np.zeros(( num_partitions, len(kernel_lengths), len(alphas) ))
+icp  = np.zeros(( num_partitions, len(kernel_lengths), len(alphas) ))
+mil  = np.zeros(( num_partitions, len(kernel_lengths), len(alphas) ))
 
 rmse[:] = np.nan
 icp[:] = np.nan
 mil[:] = np.nan
 
 for partition in range(num_partitions):
+	print("Partition", partition)
 	train_ind = np.arange(partition*advance_days, period_train_days + partition*advance_days)
 	test_ind = np.arange(period_train_days + partition*advance_days, period_train_days + partition*advance_days + period_test_days)
 	keep_train = range(int(2297920*train_ind[0]/period), int(2297920*train_ind[-1]/period))
@@ -44,7 +45,7 @@ for partition in range(num_partitions):
 	data_test  = pd.read_csv('data/link_travel_time_local.csv.gz', compression='gzip', parse_dates = True, index_col = 0,
                          skiprows = lambda x: skip_row(x, keep_test))
 	## Sort links by order 
-	data_train, order_train = sort_links(data_train, '1416:1417', '7051:2056')
+	data_train, order_train = sort_links(data_train, '1973:1412', '7057:7058')
 	## Make a link order column e.g here the neighbouring links for link 1 are 0 and 2.
 	data_train['link_order'] = data_train['link_ref'].astype('category')
 	not_in_list = data_train['link_order'].cat.categories.difference(order_train)
@@ -55,7 +56,7 @@ for partition in range(num_partitions):
 	data_train = data_train.sort_values('link_order')
 	
 	## Sort links by order 
-	data_test, order_test = sort_links(data_test, '1416:1417', '7051:2056')
+	data_test, order_test = sort_links(data_test, '1973:1412', '7057:7058')
 	## Make a link order column e.g here the neighbouring links for link 1 are 0 and 2.
 	data_test['link_order'] = data_test['link_ref'].astype('category')
 	not_in_list = data_test['link_order'].cat.categories.difference(order_test)
@@ -77,78 +78,89 @@ for partition in range(num_partitions):
                                                                                      scales, 
                                                                                      order_test,
                                                                                      freq = '15min')
-	for l in range(len(lags)):
-		lag = lags[l]
-		preds = 1
-		X_train, y_train, y_ix_train, y_mean_train, y_std_train, y_num_meas_train = roll(ix_train, 
-                                                                                 ts_train, 
-                                                                                 rm_mean_train, 
-                                                                                 rm_scale_train, 
-                                                                                 w_train, 
-                                                                                 lag, 
-                                                                                 preds)
-		X_test, y_test, y_ix_test, y_mean_test, y_std_test, y_num_meas_test = roll(ix_test, 
-                                                                                   ts_test, 
-                                                                                   rm_mean_test, 
-                                                                                   rm_scale_test, 
-                                                                                   w_test, 
-                                                                                   lag, 
-                                                                                   preds)
-		X_train = X_train[:,:,:,np.newaxis,np.newaxis]
-		y_train = y_train[:,:,:,np.newaxis,np.newaxis]
-		X_test = X_test[:,:,:,np.newaxis,np.newaxis]
-		y_test = y_test[:,:,:,np.newaxis,np.newaxis]
+	lag = 26
+	preds = 1
+	X_train, y_train, y_ix_train, y_mean_train, y_std_train, y_num_meas_train = roll(ix_train, 
+																			 ts_train, 
+																			 rm_mean_train, 
+																			 rm_scale_train, 
+																			 w_train, 
+																			 lag, 
+																			 preds)
+	X_test, y_test, y_ix_test, y_mean_test, y_std_test, y_num_meas_test = roll(ix_test, 
+																			   ts_test, 
+																			   rm_mean_test, 
+																			   rm_scale_test, 
+																			   w_test, 
+																			   lag, 
+																			   preds)
+	X_train = X_train[:,:,:,np.newaxis,np.newaxis]
+	y_train = y_train[:,:,:,np.newaxis,np.newaxis]
+	X_test = X_test[:,:,:,np.newaxis,np.newaxis]
+	y_test = y_test[:,:,:,np.newaxis,np.newaxis]
 
-		quantiles = np.array([0.05, 0.95])
-		y_traink = np.zeros((y_train.shape[0], y_train.shape[1], y_train.shape[2], 1, len(quantiles)+1))
-		y_testk  = np.zeros((y_test.shape[0], y_train.shape[1], y_train.shape[2], 1, len(quantiles)+1))
-		for k in range(len(quantiles)):
-			y_traink[:,:,:,:,k] = y_train[:,:,:,:,0]
-			y_testk[:,:,:,:,k] = y_test[:,:,:,:,0]
-        
-        ## Loop over filter size and kernel lengths and train and evaluate models
-		for f in range(len(filters)):
-			filt = filters[f]
-			for k in range(len(kernel_lengths)):
-				kern = kernel_lengths[k]
-				mod = models.joint_multilink(num_filters = filt, 
-											 kernel_length = kern,
-											 input_timesteps = X_train.shape[1],  
-											 num_links       = X_train.shape[2], 
-											 output_timesteps = y_train.shape[1], 
-											 quantiles = quantiles, 
-											 loss = lambda y, f: models.multi_tilted_loss(quantiles, y, f))
-				mod.fit(X_train, y_traink, validation_data = (X_test, y_testk), verbose = 0)
-				y_pred = mod.predict(X_test)
-				Y_true = y_test[:,:,:,0,0]* y_std_test + y_mean_test
-				Y_naive = y_mean_test
-				Y_pred_mean = (y_pred[:,:,:,0,0] * y_std_test) + y_mean_test
-				Y_pred_lwr  = (y_pred[:,:,:,0,1] * y_std_test) + y_mean_test
-				Y_pred_upr  = (y_pred[:,:,:,0,2] * y_std_test) + y_mean_test
+	quantiles = np.array([0.05, 0.95])
+	y_traink = np.zeros((y_train.shape[0], y_train.shape[1], y_train.shape[2], 1, len(quantiles)+1))
+	y_testk  = np.zeros((y_test.shape[0], y_train.shape[1], y_train.shape[2], 1, len(quantiles)+1))
+	for k in range(len(quantiles)):
+		y_traink[:,:,:,:,k+1] = y_train[:,:,:,:,0]
+		y_testk[:,:,:,:,k+1] = y_test[:,:,:,:,0]
+	
+	## Loop over filter size and kernel lengths and train and evaluate models
+	for a in range(len(alphas)):
+		alpha = alphas[a]
+		filt = int(X_train.shape[0] / (alpha*(X_train.shape[1] + y_train.shape[1])))
+		print(" Filter", filt)
+		for k in range(len(kernel_lengths)):
+			kern = kernel_lengths[k]
+			print("      Kernel", kern)
+			#################### INDEPENDENT MODEL FIT #################
+			
+			
+			#################### JDQR MODEL FIT #####################
+			
+			mod = models.joint_multilink(num_filters = filt, 
+										 kernel_length = kern,
+										 input_timesteps = X_train.shape[1],  
+										 num_links       = X_train.shape[2], 
+										 output_timesteps = y_train.shape[1], 
+										 quantiles = quantiles, 
+										 loss = lambda y, f: models.multi_tilted_loss(quantiles, y, f))
+			mod.fit(X_train, y_traink, validation_data = (X_test, y_testk), verbose = 0)
+			
+			###################### DJQR PREDICTIONS ########################
+			y_pred = mod.predict(X_test)
+			Y_true = y_test[:,:,:,0,0]* y_std_test + y_mean_test
+			Y_naive = y_mean_test
+			Y_pred_mean = (y_pred[:,:,:,0,0] * y_std_test) + y_mean_test
+			Y_pred_lwr  = (y_pred[:,:,:,0,1] * y_std_test) + y_mean_test
+			Y_pred_upr  = (y_pred[:,:,:,0,2] * y_std_test) + y_mean_test
 
-				Y_true_total = np.sum(Y_true * y_num_meas_test, axis = 2)
-				Y_naive_total = np.sum(Y_naive * y_num_meas_test, axis = 2)
-				Y_pred_mean_total = np.sum(Y_pred_mean * y_num_meas_test, axis = 2)
-				Y_pred_lwr_total = np.sum(Y_pred_lwr * y_num_meas_test, axis = 2)
-				Y_pred_upr_total = np.sum(Y_pred_upr * y_num_meas_test, axis = 2)
-				
-				rmse[partition, l, k, f] = np.sqrt(np.mean((Y_pred_mean_total - Y_true_total)**2))
-				icp[partition,  l, k, f] = np.sum(np.logical_and( (Y_true_total > Y_pred_lwr_total),(Y_true_total < Y_pred_upr_total) )) / len(Y_true_total)
-				mil[partition,  l, k, f] = np.sum(np.maximum(0, Y_pred_upr_total - Y_pred_lwr_total)) / len(Y_true_total)
-##############################################
-rmse_mean = np.mean(rmse, axis = 0)
-icp_mean = np.mean(icp, axis = 0)
-mil_mean = np.mean(mil, axis = 0)
+			Y_true_total = np.sum(Y_true * y_num_meas_test, axis = 2)
+			Y_naive_total = np.sum(Y_naive * y_num_meas_test, axis = 2)
+			Y_pred_mean_total = np.sum(Y_pred_mean * y_num_meas_test, axis = 2)
+			Y_pred_lwr_total = np.sum(Y_pred_lwr * y_num_meas_test, axis = 2)
+			Y_pred_upr_total = np.sum(Y_pred_upr * y_num_meas_test, axis = 2)
+			
+			rmse[partition, l, k, f] = np.sqrt(np.mean((Y_pred_mean_total - Y_true_total)**2))
+			icp[partition,  l, k, f] = np.sum(np.logical_and( (Y_true_total > Y_pred_lwr_total),
+															(Y_true_total <= Y_pred_upr_total) )) / len(Y_true_total)
+			mil[partition,  l, k, f] = np.sum(np.maximum(0, Y_pred_upr_total - Y_pred_lwr_total)) / len(Y_true_total)
+			
+			print("         RMSE", rmse[partition, l, k, f])
+			print("         ICP ", icp[partition, l, k, f])
+			print("         MIL ", mil[partition, l, k, f])
+			############################################################
 
-write_3d(rmse_mean, "data/rmse")
-write_3d(icp_mean, "data/icp")
-write_3d(mil_mean, "data/mil")
+write_3d(rmse, "output/rmse")
+write_3d(icp, "output/icp")
+write_3d(mil, "output/mil")
 
-#np.savetxt("data/rmse.csv", rmse_mean)
-#np.savetxt("data/icp.csv", icp_mean)
-#np.savetxt("data/mil.csv", mil_mean)
 
 ## Fit best models again and save them to data folder.
+
+
+
 
 ######################## RMSE MODEL ###################################
 inds_rmse_min = np.argwhere(rmse_mean == np.amin(rmse_mean))[0]
@@ -193,8 +205,9 @@ mod = models.joint_multilink(num_filters = filt,
                              loss = lambda y, f: models.multi_tilted_loss(quantiles, y, f))
 mod.fit(X_train, y_traink, validation_data = (X_test, y_testk), verbose = 0)
 ## Save model
-mod.save('data/mod_rmse.h5')
+mod.save('models/mod_rmse.h5')
 
+######################################################################
 
 
 
@@ -208,7 +221,7 @@ mod.save('data/mod_rmse.h5')
 inds_icp_max = np.argwhere(np.absolute((icp_mean-0.90)) == np.amin(np.absolute(icp_mean - 0.90) ))
 lag = lags[inds_icp_max[0]]
 kernel = kernel_lengths[inds_icp_max[1]]
-filt = filters[inds_icp_max[1]]
+filt = filters[inds_icp_max[2]]
 
 X_train, y_train, y_ix_train, y_mean_train, y_std_train, y_num_meas_train = roll(ix_train, 
                                                                                  ts_train, 
@@ -246,62 +259,14 @@ mod = models.joint_multilink(num_filters = filt,
                              loss = lambda y, f: models.multi_tilted_loss(quantiles, y, f))
 mod.fit(X_train, y_traink, validation_data = (X_test, y_testk), verbose = 0)
 ## Save model
-mod.save('data/mod_icp.h5')
-
-
-
-######################## MIL MODEL ###################################
-
-inds_icp_max = np.argwhere(np.absolute((icp_mean-0.90)) == np.amin(np.absolute(icp_mean - 0.90) ))[0]
-lag = lags[inds_icp_max[0]]
-kernel = kernel_lengths[inds_icp_max[1]]
-
-X_train, y_train, y_ix_train, y_mean_train, y_std_train, y_num_meas_train = roll(ix_train, 
-                                                                                 ts_train, 
-                                                                                 rm_mean_train, 
-                                                                                 rm_scale_train, 
-                                                                                 w_train, 
-                                                                                 lag, 
-                                                                                 preds)
-X_test, y_test, y_ix_test, y_mean_test, y_std_test, y_num_meas_test = roll(ix_test, 
-                                                                           ts_test, 
-                                                                           rm_mean_test, 
-                                                                           rm_scale_test, 
-                                                                           w_test, 
-                                                                           lag, 
-                                                                           preds)
-
-X_train = X_train[:,:,:,np.newaxis,np.newaxis]
-y_train = y_train[:,:,:,np.newaxis,np.newaxis]
-X_test = X_test[:,:,:,np.newaxis,np.newaxis]
-y_test = y_test[:,:,:,np.newaxis,np.newaxis]
-
-quantiles = np.array([0.05, 0.95])
-y_traink = np.zeros((y_train.shape[0], y_train.shape[1], y_train.shape[2], 1, len(quantiles)+1))
-y_testk  = np.zeros((y_test.shape[0], y_train.shape[1], y_train.shape[2], 1, len(quantiles)+1))
-for k in range(len(quantiles)):
-    y_traink[:,:,:,:,k] = y_train[:,:,:,:,0]
-    y_testk[:,:,:,:,k] = y_test[:,:,:,:,0]
-
-mod = models.joint_multilink(num_filters = filt, 
-                             kernel_length = kernel,
-                             input_timesteps = X_train.shape[1],  
-                             num_links       = X_train.shape[2], 
-                             output_timesteps = y_train.shape[1], 
-                             quantiles = quantiles, 
-                             loss = lambda y, f: models.multi_tilted_loss(quantiles, y, f))
-mod.fit(X_train, y_traink, validation_data = (X_test, y_testk), verbose = 0)
-## Save model
-mod.save('data/mod_icp.h5')
-
-
+mod.save('models/mod_icp.h5')
 
 ######################## MIL MODEL ###################################
 
 inds_mil_min = np.argwhere(mil_mean == np.amin(mil_mean))[0]
 lag = lags[inds_mil_min[0]]
 kernel = kernel_lengths[inds_mil_min[1]]
-filt = filters[inds_mil_min[1]]
+filt = filters[inds_mil_min[2]]
 
 X_train, y_train, y_ix_train, y_mean_train, y_std_train, y_num_meas_train = roll(ix_train, 
                                                                                  ts_train, 
@@ -339,4 +304,4 @@ mod = models.joint_multilink(num_filters = filt,
                              loss = lambda y, f: models.multi_tilted_loss(quantiles, y, f))
 mod.fit(X_train, y_traink, validation_data = (X_test, y_testk), verbose = 0)
 ## Save model
-mod.save('data/mod_mil.h5')
+mod.save('models/mod_mil.h5')
