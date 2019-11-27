@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow_probability as tfp
 tfd = tfp.distributions
+sum_all = tf.math.reduce_sum
 from VariationalPosterior import VariationalPosterior
 
 class BayesianLSTMCell_Untied(tf.keras.Model):
