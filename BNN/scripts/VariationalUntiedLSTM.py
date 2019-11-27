@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow_probability as tfp
 tfd = tfp.distributions
+from VariationalPosterior import VariationalPosterior
 
 class BayesianLSTMCell_Untied(tf.keras.Model):
     def __init__(self, num_units, training, init, prior, **kwargs):
