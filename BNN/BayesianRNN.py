@@ -1,3 +1,6 @@
+from VariationalPosterior import VariationalPosterior
+from prior import MixturePrior
+
 class BayesianRNN(tf.keras.Model):
     def __init__(self, num_units, num_links, batch_size, init, cell_type, prior, **kwargs):
         super(BayesianRNN, self).__init__(**kwargs)
